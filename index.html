@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>إدارة ديون المتجر</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen flex flex-col" x-data="storeApp()">
+
+    <!-- شاشة القفل -->
+    <template x-if="!isUnlocked">
+        <div class="flex items-center justify-center min-h-screen p-4 bg-sky-50">
+            <div class="bg-white p-8 rounded-2xl shadow-md w-full max-w-sm text-center">
+                <div class="text-4xl mb-2">🔒</div>
+                <h1 class="text-xl font-bold text-sky-600 mb-1">قفل التطبيق</h1>
+                <p class="text-xs text-gray-400 mb-6">الرجاء إدخال كلمة المرور</p>
+                
+                <input type="password" x-model="passwordInput" placeholder="كلمة المرور" class="w-full px-4 py-2 border rounded-xl mb-2 text-center text-lg focus:outline-none focus:border-sky-500">
+                
+                <template x-if="showPasswordError">
+                    <p class="text-red-500 text-xs mb-4">كلمة المرور غير صحيحة</p>
+                </template>
+
+                <button @click="checkPassword()" class="w-full bg-sky-600 text-white py-2 rounded-xl font-bold hover:bg-sky-700 transition">فتح التطبيق</button>
+            </div>
+        </div>
+    </template>
+
+    <!-- التطبيق الرئيسي -->
+    <template x-if="isUnlocked">
+        <div class="flex flex-col min-h-screen">
+            
+            <!-- عرض القائمة الرئيسية للزبائن -->
+            <template x-if="currentView === 'home'">
+                <div class="flex flex-col min-h-screen">
+                    <header class="bg-sky-600 text-white p-4 shadow flex justify-between items-center">
+                        <h1 class="text-lg font-bold">إدارة ديون المتجر</h1>
+                        <button @click="fetchData()" class="bg-sky-700 px-3 py-1.5 rounded-xl text-sm flex items-center gap-1 hover:bg-sky-800 transition">
+                            <span x-show="!isSyncing">🔄 مزامنة</span>
+                            <span x-show="isSyncing">⏳ جاري...</span>
+                        </button>
+                    </header>
+
+                    <main class="flex-1 p-4 max-w-md w-full mx-auto pb-20">
+                        <div class="bg-sky-100 p-4 rounded-2xl mb-4 shadow-sm flex justify-between items-center">
+                            <div>
+                                <p class="text-xs text-gray-600 font-bold">إجمالي ديون المحل 📊</p>
+                                <p class="text-2xl font-bold text-red-600 mt-1" x-text="totalDebt + ' شيكل'"></p>
+                            </div>
+                            <div class="text-left">
+                                <p class="text-xs text-gray-600">الزبائن المدينون</p>
+                                <p class="text-lg font-bold text-sky-700 mt-1" x-text="debtorsCount + ' / ' + customers.length"></p>
+                            </div>
+                        </div>
+
+                        <input type="text" x-model="searchQuery" placeholder="بحث عن زبون (الاسم أو الرقم)..." class="w-full px-4 py-2 bg-white border rounded-xl mb-4 focus:outline-none focus:border-sky-500 shadow-sm">
+
+                        <template x-if="isSyncing && customers.length === 0">
+                            <div class="text-center py-20 text-gray-400">
+                                <p class="text-lg">⏳ جاري تحميل البيانات...</p>
+                            </div>
+                        </template>
+
+                        <div class="space-y-3">
+                            <template x-for="customer in filteredCustomers" :key="customer.id">
+                                <div @click="selectCustomer(customer)" class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center cursor-pointer hover:border-sky-300 transition">
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-10 h-10 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center font-bold" x-text="customer.name.charAt(0)"></div>
+                                        <div>
+                                            <h3 class="font-bold text-gray-800" x-text="customer.name"></h3>
+                                            <p class="text-xs text-gray-400" x-text="customer.phone || 'بدون رقم'"></p>
+                                        </div>
+                                    </div>
+                                    <span class="font-bold text-sm" :class="Number(customer.balance) > 0 ? 'text-red-600' : 'text-green-600'" x-text="customer.balance + ' شيكل'"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </main>
+
+                    <button @click="showAddModal = true" class="fixed bottom-6 left-6 bg-sky-600 text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-3xl hover:bg-sky-700 transition">
+                        +
+                    </button>
+                </div>
+            </template>
+
+            <!-- شاشة تفاصيل الزبون والمعاملات -->
+            <template x-if="currentView === 'details'">
+                <div class="flex flex-col min-h-screen">
+                    <header class="bg-sky-600 text-white p-4 shadow flex items-center gap-3">
+                        <button @click="currentView = 'home'" class="text-xl font-bold">⬅️</button>
+                        <div>
+                            <h1 class="text-lg font-bold" x-text="selectedCustomer.name"></h1>
+                            <p class="text-xs text-sky-200" x-text="selectedCustomer.phone || 'بدون رقم'"></p>
+                        </div>
+                    </header>
+
+                    <main class="flex-1 p-4 max-w-md w-full mx-auto pb-24">
+                        <div class="bg-white p-4 rounded-2xl mb-4 shadow-sm border text-center">
+                            <p class="text-xs text-gray-500">الرصيد المطلوب (الدين)</p>
+                            <p class="text-3xl font-bold mt-1" :class="Number(selectedCustomer.balance) > 0 ? 'text-red-600' : 'text-green-600'" x-text="selectedCustomer.balance + ' شيكل'"></p>
+                        </div>
+
+                        <h3 class="font-bold text-gray-700 mb-3">سجل المعاملات</h3>
+                        
+                        <div class="space-y-2">
+                            <template x-for="tx in customerTransactions" :key="tx.id">
+                                <div class="bg-white p-3 rounded-xl shadow-sm border flex justify-between items-center">
+                                    <div>
+                                        <p class="font-bold text-sm" x-text="tx.description || (tx.type === 'purchase' ? 'دين جديد' : 'دفعة مسددة')"></p>
+                                        <p class="text-xs text-gray-400" x-text="tx.dateTime ? tx.dateTime.split('T')[0] : ''"></p>
+                                    </div>
+                                    <span class="font-bold text-sm" :class="tx.type === 'purchase' ? 'text-red-600' : 'text-green-600'" x-text="(tx.type === 'purchase' ? '+' : '-') + tx.amount + ' شيكل'"></span>
+                                </div>
+                            </template>
+                            <template x-if="customerTransactions.length === 0">
+                                <p class="text-center text-gray-400 py-10">لا توجد معاملات مسجلة لهذا الزبون</p>
+                            </template>
+                        </div>
+                    </main>
+
+                    <div class="fixed bottom-0 left-0 right-0 bg-white border-t p-3 flex gap-2 max-w-md mx-auto">
+                        <button @click="openTxModal('purchase')" class="flex-1 bg-red-500 text-white py-2.5 rounded-xl font-bold hover:bg-red-600 transition">تسجيل دين (+)</button>
+                        <button @click="openTxModal('payment')" class="flex-1 bg-green-600 text-white py-2.5 rounded-xl font-bold hover:bg-green-700 transition">تسجيل دفعة (-)</button>
+                    </div>
+                </div>
+            </template>
+
+            <!-- نافذة إضافة زبون جديد -->
+            <div x-show="showAddModal" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl">
+                    <h3 class="font-bold text-lg mb-4 text-sky-600">إضافة زبون جديد</h3>
+                    <input type="text" x-model="newCustomerName" placeholder="اسم الزبون" class="w-full px-4 py-2 border rounded-xl mb-3 focus:outline-none focus:border-sky-500">
+                    <input type="tel" x-model="newCustomerPhone" placeholder="رقم الهاتف" class="w-full px-4 py-2 border rounded-xl mb-4 focus:outline-none focus:border-sky-500">
+                    
+                    <div class="flex gap-2">
+                        <button @click="addCustomer()" class="flex-1 bg-sky-600 text-white py-2 rounded-xl font-bold hover:bg-sky-700">إضافة</button>
+                        <button @click="showAddModal = false" class="flex-1 bg-gray-200 text-gray-700 py-2 rounded-xl font-bold hover:bg-gray-300">إلغاء</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- نافذة إضافة معاملة -->
+            <div x-show="showTxModal" class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl">
+                    <h3 class="font-bold text-lg mb-4" :class="txType === 'purchase' ? 'text-red-600' : 'text-green-600'" x-text="txType === 'purchase' ? 'تسجيل دين جديد' : 'تسجيل دفعة مسددة'"></h3>
+                    <input type="number" x-model="txAmount" placeholder="المبلغ بالشيكل" class="w-full px-4 py-2 border rounded-xl mb-3 focus:outline-none focus:border-sky-500">
+                    <input type="text" x-model="txDescription" placeholder="ملاحظة (اختياري، مثلاً: بضاعة، كاش...)" class="w-full px-4 py-2 border rounded-xl mb-4 focus:outline-none focus:border-sky-500">
+                    
+                    <div class="flex gap-2">
+                        <button @click="addTransaction()" class="flex-1 bg-sky-600 text-white py-2 rounded-xl font-bold hover:bg-sky-700">حفظ</button>
+                        <button @click="showTxModal = false" class="flex-1 bg-gray-200 text-gray-700 py-2 rounded-xl font-bold hover:bg-gray-300">إلغاء</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </template>
+
+    <script>
+        const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwE9YQitDXEio_0ekuJNYvh_gut_lyNxSFmr77CldQWAs66V5YNKj0YhgwcMzQ1DfN4/exec";
+
+        function storeApp() {
+            return {
+                isUnlocked: localStorage.getItem('is_unlocked') === 'true',
+                passwordInput: '',
+                showPasswordError: false,
+                currentView: 'home',
+                customers: [],
+                transactions: [],
+                selectedCustomer: null,
+                searchQuery: '',
+                isSyncing: false,
+                showAddModal: false,
+                newCustomerName: '',
+                newCustomerPhone: '',
+                
+                showTxModal: false,
+                txType: 'purchase',
+                txAmount: '',
+                txDescription: '',
+
+                init() {
+                    if (this.isUnlocked) {
+                        this.fetchData();
+                    }
+                },
+
+                checkPassword() {
+                    if (this.passwordInput === '0599106861') {
+                        this.isUnlocked = true;
+                        localStorage.setItem('is_unlocked', 'true');
+                        this.fetchData();
+                    } else {
+                        this.showPasswordError = true;
+                    }
+                },
+
+                async fetchData() {
+                    this.isSyncing = true;
+                    try {
+                        // جلب الزبائن والمعاملات بشكل منفصل ليتوافق تماماً مع السكريبت الأصلي
+                        const [resCust, resTx] = await Promise.all([
+                            fetch(`${WEB_APP_URL}?action=getCustomers`),
+                            fetch(`${WEB_APP_URL}?action=getTransactions`)
+                        ]);
+                        
+                        const dataCust = await resCust.json();
+                        const dataTx = await resTx.json();
+
+                        if (dataCust.success && dataCust.customers) {
+                            this.customers = dataCust.customers;
+                        }
+                        if (dataTx.success && dataTx.transactions) {
+                            this.transactions = dataTx.transactions;
+                        }
+
+                        if (this.selectedCustomer) {
+                            this.selectedCustomer = this.customers.find(c => c.id === this.selectedCustomer.id) || this.selectedCustomer;
+                        }
+                    } catch (e) {
+                        console.error("Error fetching data:", e);
+                    }
+                    this.isSyncing = false;
+                },
+
+                async addCustomer() {
+                    if (!this.newCustomerName.trim()) return;
+                    
+                    const newCust = {
+                        action: 'addCustomer',
+                        id: 'web_' + Date.now(),
+                        name: this.newCustomerName,
+                        phone: this.newCustomerPhone
+                    };
+
+                    // تحديث محلي مؤقت
+                    this.customers.push({ ...newCust, balance: 0, createdAt: new Date().toISOString() });
+                    this.showAddModal = false;
+                    this.newCustomerName = '';
+                    this.newCustomerPhone = '';
+
+                    try {
+                        const params = new URLSearchParams(newCust);
+                        await fetch(`${WEB_APP_URL}?${params.toString()}`, { mode: 'no-cors' });
+                        setTimeout(() => this.fetchData(), 1500);
+                    } catch (e) {
+                        console.error("Error syncing new customer:", e);
+                    }
+                },
+
+                selectCustomer(customer) {
+                    this.selectedCustomer = customer;
+                    this.currentView = 'details';
+                },
+
+                openTxModal(type) {
+                    this.txType = type;
+                    this.txAmount = '';
+                    this.txDescription = '';
+                    this.showTxModal = true;
+                },
+
+                async addTransaction() {
+                    if (!this.txAmount || isNaN(this.txAmount) || Number(this.txAmount) <= 0) return;
+
+                    const amount = Number(this.txAmount);
+                    const txData = {
+                        action: 'addTransaction',
+                        id: 'tx_' + Date.now(),
+                        customerId: this.selectedCustomer.id,
+                        type: this.txType, // 'purchase' أو 'payment'
+                        amount: amount,
+                        description: this.txDescription,
+                        dateTime: new Date().toISOString()
+                    };
+
+                    // تحديث الرصيد والمعاملات محلياً لتجربة فورية
+                    if (this.txType === 'purchase') {
+                        this.selectedCustomer.balance = Number(this.selectedCustomer.balance) + amount;
+                    } else {
+                        this.selectedCustomer.balance = Number(this.selectedCustomer.balance) - amount;
+                    }
+
+                    this.transactions.unshift(txData);
+                    this.showTxModal = false;
+
+                    try {
+                        const params = new URLSearchParams(txData);
+                        await fetch(`${WEB_APP_URL}?${params.toString()}`, { mode: 'no-cors' });
+                        setTimeout(() => this.fetchData(), 1500);
+                    } catch (e) {
+                        console.error("Error syncing transaction:", e);
+                    }
+                },
+
+                get customerTransactions() {
+                    if (!this.selectedCustomer) return [];
+                    return this.transactions.filter(tx => String(tx.customerId).trim() === String(this.selectedCustomer.id).trim());
+                },
+
+                get totalDebt() {
+                    return this.customers.filter(c => Number(c.balance) > 0).reduce((sum, c) => sum + Number(c.balance), 0);
+                },
+
+                get debtorsCount() {
+                    return this.customers.filter(c => Number(c.balance) > 0).length;
+                },
+
+                get filteredCustomers() {
+                    return this.customers.filter(c => 
+                        (c.name && c.name.toLowerCase().includes(this.searchQuery.toLowerCase())) || 
+                        (c.phone && c.phone.includes(this.searchQuery))
+                    );
+                }
+            }
+        }
+    </script>
+</body>
+</html>
