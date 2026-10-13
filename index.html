@@ -127,7 +127,7 @@
                                 <div class="bg-white p-3 rounded-xl shadow-sm border flex justify-between items-center">
                                     <div>
                                         <p class="font-bold text-sm" x-text="'الزبون: ' + getCustomerName(tx.customerId)"></p>
-                                        <p class="text-xs text-gray-400" x-text="(tx.type === 'purchase' ? '🛒 دين' : '💵 دفعة') + ' • ' + (tx.description || '') + ' (' + (tx.dateTime ? tx.dateTime.split('T')[0] : '') + ')'"></p>
+                                        <p class="text-xs text-gray-400" x-text="(tx.type === 'purchase' ? '🛒 دين' : '💵 دفعة') + ' • ' + (tx.description || '') + ' (' + (transactionDateKey(tx.dateTime)) + ')'"></p>
                                     </div>
                                     <span class="font-bold text-sm" :class="tx.type === 'purchase' ? 'text-red-600' : 'text-green-600'" x-text="(tx.type === 'purchase' ? '+' : '-') + tx.amount + ' شيكل'"></span>
                                 </div>
@@ -164,7 +164,7 @@
                                 <div class="bg-white p-3 rounded-xl shadow-sm border flex justify-between items-center">
                                     <div>
                                         <p class="font-bold text-sm" x-text="tx.description || (tx.type === 'purchase' ? 'دين جديد' : 'دفعة مسددة')"></p>
-                                        <p class="text-xs text-gray-400" x-text="tx.dateTime ? tx.dateTime.split('T')[0] : ''"></p>
+                                        <p class="text-xs text-gray-400" x-text="transactionDateKey(tx.dateTime)"></p>
                                     </div>
                                     <span class="font-bold text-sm" :class="tx.type === 'purchase' ? 'text-red-600' : 'text-green-600'" x-text="(tx.type === 'purchase' ? '+' : '-') + tx.amount + ' شيكل'"></span>
                                 </div>
@@ -216,6 +216,50 @@
     <script>
         const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwE9YQitDXEio_0ekuJNYvh_gut_lyNxSFmr77CldQWAs66V5YNKj0YhgwcMzQ1DfN4/exec";
 
+        // توحيد الأرقام العربية والتواريخ القادمة من Google Sheets
+        function normalizeDateDigits(value) {
+            return String(value ?? '')
+                .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d))
+                .replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+        }
+
+        function transactionDateKey(value) {
+            if (value === null || value === undefined || value === '') return '';
+            const raw = normalizeDateDigits(value).trim();
+
+            // تاريخ فقط بصيغة YYYY-MM-DD
+            let match = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+            if (match) {
+                return `${match[1]}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`;
+            }
+
+            // تاريخ/وقت ISO؛ نستخدم التاريخ المحلي حتى يتوافق مع يوم التقرير
+            if (raw.includes('T')) {
+                const parsed = new Date(raw);
+                if (!Number.isNaN(parsed.getTime())) {
+                    return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+                }
+            }
+
+            // تنسيقات Google Sheets مثل: 12:00:00 ص 2026/10/13 أو 2026/10/13
+            match = raw.match(/(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+            if (match) {
+                return `${match[1]}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`;
+            }
+
+            // محاولة أخيرة للتواريخ التي يستطيع المتصفح قراءتها
+            const parsed = new Date(raw);
+            if (!Number.isNaN(parsed.getTime())) {
+                return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+            }
+            return '';
+        }
+
+        function localTodayKey() {
+            const now = new Date();
+            return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        }
+
         function storeApp() {
             return {
                 isUnlocked: localStorage.getItem('is_unlocked') === 'true',
@@ -237,7 +281,7 @@
                 txDescription: '',
 
                 // متغيرات التقرير اليومي
-                reportDate: new Date().toISOString().split('T')[0],
+                reportDate: localTodayKey(),
                 showAllTransactions: false,
 
                 init() {
@@ -363,7 +407,7 @@
 
                 get filteredDailyTransactions() {
                     if (this.showAllTransactions) return this.transactions;
-                    return this.transactions.filter(tx => tx.dateTime && tx.dateTime.startsWith(this.reportDate));
+                    return this.transactions.filter(tx => transactionDateKey(tx.dateTime) === this.reportDate);
                 },
 
                 get dailyTotalPurchases() {
