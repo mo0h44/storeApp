@@ -37,10 +37,13 @@
                 <div class="flex flex-col min-h-screen">
                     <header class="bg-sky-600 text-white p-4 shadow flex justify-between items-center">
                         <h1 class="text-lg font-bold">إدارة ديون المتجر</h1>
-                        <button @click="fetchData()" class="bg-sky-700 px-3 py-1.5 rounded-xl text-sm flex items-center gap-1 hover:bg-sky-800 transition">
-                            <span x-show="!isSyncing">🔄 مزامنة</span>
-                            <span x-show="isSyncing">⏳ جاري...</span>
-                        </button>
+                        <div class="flex gap-2">
+                            <button @click="currentView = 'dailyReport'" class="bg-sky-700 px-3 py-1.5 rounded-xl text-sm flex items-center gap-1 hover:bg-sky-800 transition">📅 تقرير اليوم</button>
+                            <button @click="fetchData()" class="bg-sky-700 px-3 py-1.5 rounded-xl text-sm flex items-center gap-1 hover:bg-sky-800 transition">
+                                <span x-show="!isSyncing">🔄 مزامنة</span>
+                                <span x-show="isSyncing">⏳ جاري...</span>
+                            </button>
+                        </div>
                     </header>
 
                     <main class="flex-1 p-4 max-w-md w-full mx-auto pb-20">
@@ -82,6 +85,58 @@
                     <button @click="showAddModal = true" class="fixed bottom-6 left-6 bg-sky-600 text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-3xl hover:bg-sky-700 transition">
                         +
                     </button>
+                </div>
+            </template>
+
+            <!-- شاشة التقرير اليومي وتفصيل الحركات -->
+            <template x-if="currentView === 'dailyReport'">
+                <div class="flex flex-col min-h-screen">
+                    <header class="bg-sky-600 text-white p-4 shadow flex items-center gap-3">
+                        <button @click="currentView = 'home'" class="text-xl font-bold">⬅️</button>
+                        <h1 class="text-lg font-bold">تقرير العمليات اليومية 📅</h1>
+                    </header>
+
+                    <main class="flex-1 p-4 max-w-md w-full mx-auto pb-20">
+                        <div class="flex gap-2 mb-4">
+                            <input type="date" x-model="reportDate" class="flex-1 px-4 py-2 bg-white border rounded-xl focus:outline-none focus:border-sky-500 shadow-sm">
+                            <button @click="showAllTransactions = false" class="bg-sky-600 text-white px-4 py-2 rounded-xl font-bold">بحث</button>
+                        </div>
+                        <div class="flex justify-end mb-3">
+                            <button @click="showAllTransactions = !showAllTransactions" class="text-xs text-sky-600 font-bold underline" x-text="showAllTransactions ? 'عرض تقرير اليوم المحدد' : 'عرض كافة العمليات السابقة 📂'"></button>
+                        </div>
+
+                        <!-- كارد المجاميع -->
+                        <div class="bg-white p-4 rounded-2xl mb-4 shadow-sm border">
+                            <p class="text-xs text-gray-500 font-bold mb-3" x-text="showAllTransactions ? 'ملخص كافة العمليات المسجلة' : 'ملخص عمليات تاريخ: ' + reportDate"></p>
+                            <div class="flex justify-between">
+                                <div>
+                                    <p class="text-xs text-gray-400">إجمالي الديون (+)</p>
+                                    <p class="text-lg font-bold text-red-600 mt-1" x-text="dailyTotalPurchases + ' شيكل'"></p>
+                                </div>
+                                <div class="text-left">
+                                    <p class="text-xs text-gray-400">إجمالي الدفعات (-)</p>
+                                    <p class="text-lg font-bold text-green-600 mt-1" x-text="dailyTotalPayments + ' شيكل'"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h3 class="font-bold text-gray-700 mb-2" x-text="'تفاصيل الحركات (' + filteredDailyTransactions.length + '):'"></h3>
+                        
+                        <div class="space-y-2">
+                            <template x-for="tx in filteredDailyTransactions" :key="tx.id">
+                                <div class="bg-white p-3 rounded-xl shadow-sm border flex justify-between items-center">
+                                    <div>
+                                        <p class="font-bold text-sm" x-text="'الزبون: ' + getCustomerName(tx.customerId)"></p>
+                                        <p class="text-xs text-gray-400" x-text="(tx.type === 'purchase' ? '🛒 دين' : '💵 دفعة') + ' • ' + (tx.description || '') + ' (' + (tx.dateTime ? tx.dateTime.split('T')[0] : '') + ')'"></p>
+                                    </div>
+                                    <span class="font-bold text-sm" :class="tx.type === 'purchase' ? 'text-red-600' : 'text-green-600'" x-text="(tx.type === 'purchase' ? '+' : '-') + tx.amount + ' شيكل'"></span>
+                                </div>
+                            </template>
+                            <template x-if="filteredDailyTransactions.length === 0">
+                                <p class="text-center text-gray-400 py-10">لا توجد معاملات مسجلة في هذا التاريخ</p>
+                            </template>
+                        </div>
+                    </main>
                 </div>
             </template>
 
@@ -146,7 +201,7 @@
                 <div class="bg-white p-6 rounded-2xl w-full max-w-sm shadow-xl">
                     <h3 class="font-bold text-lg mb-4" :class="txType === 'purchase' ? 'text-red-600' : 'text-green-600'" x-text="txType === 'purchase' ? 'تسجيل دين جديد' : 'تسجيل دفعة مسددة'"></h3>
                     <input type="number" x-model="txAmount" placeholder="المبلغ بالشيكل" class="w-full px-4 py-2 border rounded-xl mb-3 focus:outline-none focus:border-sky-500">
-                    <input type="text" x-model="txDescription" placeholder="ملاحظة (اختياري، مثلاً: بضاعة، كاش...)" class="w-full px-4 py-2 border rounded-xl mb-4 focus:outline-none focus:border-sky-500">
+                    <input type="text" x-model="txDescription" placeholder="ملاحظة (اختياري، مثلاً: مشروبات، شحن...)" class="w-full px-4 py-2 border rounded-xl mb-4 focus:outline-none focus:border-sky-500">
                     
                     <div class="flex gap-2">
                         <button @click="addTransaction()" class="flex-1 bg-sky-600 text-white py-2 rounded-xl font-bold hover:bg-sky-700">حفظ</button>
@@ -181,6 +236,10 @@
                 txAmount: '',
                 txDescription: '',
 
+                // متغيرات التقرير اليومي
+                reportDate: new Date().toISOString().split('T')[0],
+                showAllTransactions: false,
+
                 init() {
                     if (this.isUnlocked) {
                         this.fetchData();
@@ -188,7 +247,7 @@
                 },
 
                 checkPassword() {
-                    if (this.passwordInput === '0599106861') {
+                    if (this.passwordInput === '071218579') {
                         this.isUnlocked = true;
                         localStorage.setItem('is_unlocked', 'true');
                         this.fetchData();
@@ -200,7 +259,6 @@
                 async fetchData() {
                     this.isSyncing = true;
                     try {
-                        // جلب الزبائن والمعاملات بشكل منفصل ليتوافق تماماً مع السكريبت الأصلي
                         const [resCust, resTx] = await Promise.all([
                             fetch(`${WEB_APP_URL}?action=getCustomers`),
                             fetch(`${WEB_APP_URL}?action=getTransactions`)
@@ -235,7 +293,6 @@
                         phone: this.newCustomerPhone
                     };
 
-                    // تحديث محلي مؤقت
                     this.customers.push({ ...newCust, balance: 0, createdAt: new Date().toISOString() });
                     this.showAddModal = false;
                     this.newCustomerName = '';
@@ -270,13 +327,12 @@
                         action: 'addTransaction',
                         id: 'tx_' + Date.now(),
                         customerId: this.selectedCustomer.id,
-                        type: this.txType, // 'purchase' أو 'payment'
+                        type: this.txType,
                         amount: amount,
                         description: this.txDescription,
                         dateTime: new Date().toISOString()
                     };
 
-                    // تحديث الرصيد والمعاملات محلياً لتجربة فورية
                     if (this.txType === 'purchase') {
                         this.selectedCustomer.balance = Number(this.selectedCustomer.balance) + amount;
                     } else {
@@ -295,9 +351,27 @@
                     }
                 },
 
+                getCustomerName(id) {
+                    const cust = this.customers.find(c => String(c.id).trim() === String(id).trim());
+                    return cust ? cust.name : 'زبون محذوف';
+                },
+
                 get customerTransactions() {
                     if (!this.selectedCustomer) return [];
                     return this.transactions.filter(tx => String(tx.customerId).trim() === String(this.selectedCustomer.id).trim());
+                },
+
+                get filteredDailyTransactions() {
+                    if (this.showAllTransactions) return this.transactions;
+                    return this.transactions.filter(tx => tx.dateTime && tx.dateTime.startsWith(this.reportDate));
+                },
+
+                get dailyTotalPurchases() {
+                    return this.filteredDailyTransactions.filter(tx => tx.type === 'purchase').reduce((sum, tx) => sum + Number(tx.amount), 0);
+                },
+
+                get dailyTotalPayments() {
+                    return this.filteredDailyTransactions.filter(tx => tx.type === 'payment').reduce((sum, tx) => sum + Number(tx.amount), 0);
                 },
 
                 get totalDebt() {
