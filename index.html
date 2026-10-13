@@ -127,7 +127,7 @@
                                 <div class="bg-white p-3 rounded-xl shadow-sm border flex justify-between items-center">
                                     <div>
                                         <p class="font-bold text-sm" x-text="'الزبون: ' + getCustomerName(tx.customerId)"></p>
-                                        <p class="text-xs text-gray-400" x-text="(tx.type === 'purchase' ? '🛒 دين' : '💵 دفعة') + ' • ' + (tx.description || '') + ' (' + (tx.dateTime ? tx.dateTime.split('T')[0] : '') + ')'"></p>
+                                        <p class="text-xs text-gray-400" x-text="(tx.type === 'purchase' ? '🛒 دين' : '💵 دفعة') + ' • ' + (tx.description || '') + ' (' + formatTransactionDate(tx.dateTime) + ')'"></p>
                                     </div>
                                     <span class="font-bold text-sm" :class="tx.type === 'purchase' ? 'text-red-600' : 'text-green-600'" x-text="(tx.type === 'purchase' ? '+' : '-') + tx.amount + ' شيكل'"></span>
                                 </div>
@@ -164,7 +164,7 @@
                                 <div class="bg-white p-3 rounded-xl shadow-sm border flex justify-between items-center">
                                     <div>
                                         <p class="font-bold text-sm" x-text="tx.description || (tx.type === 'purchase' ? 'دين جديد' : 'دفعة مسددة')"></p>
-                                        <p class="text-xs text-gray-400" x-text="tx.dateTime ? tx.dateTime.split('T')[0] : ''"></p>
+                                        <p class="text-xs text-gray-400" x-text="formatTransactionDate(tx.dateTime)"></p>
                                     </div>
                                     <span class="font-bold text-sm" :class="tx.type === 'purchase' ? 'text-red-600' : 'text-green-600'" x-text="(tx.type === 'purchase' ? '+' : '-') + tx.amount + ' شيكل'"></span>
                                 </div>
@@ -363,7 +363,59 @@
 
                 get filteredDailyTransactions() {
                     if (this.showAllTransactions) return this.transactions;
-                    return this.transactions.filter(tx => tx.dateTime && tx.dateTime.startsWith(this.reportDate));
+
+                    const selectedDate = this.normalizeTransactionDate(this.reportDate);
+
+                    return this.transactions.filter(tx => {
+                        return this.normalizeTransactionDate(tx.dateTime) === selectedDate;
+                    });
+                },
+
+                // توحيد التاريخ مهما كان تنسيقه في Google Sheets
+                normalizeTransactionDate(value) {
+                    if (value === null || value === undefined || value === '') return '';
+
+                    const normalizeDigits = text => String(text)
+                        .replace(/[٠-٩]/g, digit => '٠١٢٣٤٥٦٧٨٩'.indexOf(digit))
+                        .replace(/[۰-۹]/g, digit => '۰۱۲۳۴۵۶۷۸۹'.indexOf(digit));
+
+                    if (value instanceof Date) {
+                        if (isNaN(value.getTime())) return '';
+                        return [
+                            value.getFullYear(),
+                            String(value.getMonth() + 1).padStart(2, '0'),
+                            String(value.getDate()).padStart(2, '0')
+                        ].join('-');
+                    }
+
+                    const text = normalizeDigits(value).trim();
+
+                    // 2026-10-13 أو 2026-10-13T07:28:15.468Z
+                    let match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+                    if (match) {
+                        return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+                    }
+
+                    // 12:00:00 ص 2026/10/13 أو 2026/10/13
+                    match = text.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+                    if (match) {
+                        return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+                    }
+
+                    // محاولة أخيرة لصيغ التاريخ الأخرى
+                    const date = new Date(text);
+                    if (isNaN(date.getTime())) return '';
+
+                    return [
+                        date.getFullYear(),
+                        String(date.getMonth() + 1).padStart(2, '0'),
+                        String(date.getDate()).padStart(2, '0')
+                    ].join('-');
+                },
+
+                formatTransactionDate(value) {
+                    const dateKey = this.normalizeTransactionDate(value);
+                    return dateKey || '';
                 },
 
                 get dailyTotalPurchases() {
